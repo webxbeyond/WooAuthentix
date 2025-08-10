@@ -57,7 +57,20 @@ jobs:
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=${WP_VERSION:-latest}
-          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root $DB_ROOT_PW 127.0.0.1 $WP_VERSION
+          set -e
+          SCRIPT_PATH=/tmp/install-wp-tests.sh
+          # Try primary (master), then trunk, then pinned commit fallback.
+          for U in \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/master/templates/install-wp-tests.sh \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/3c6a4f6e21b4e6f6b7cb3a3d4ccf6d59f6a01111/templates/install-wp-tests.sh ; do
+            echo "Attempting download: $U";
+            if curl -fsSL "$U" -o "$SCRIPT_PATH"; then
+              echo "Downloaded test installer from $U"; break; fi
+          done
+          if [ ! -s "$SCRIPT_PATH" ]; then
+            echo "Failed to download install-wp-tests.sh from all fallbacks" >&2; exit 1; fi
+          bash "$SCRIPT_PATH" wordpress_test root "$DB_ROOT_PW" 127.0.0.1 "$WP_VERSION"
       - name: Install WooCommerce (optional)
         run: |
           mkdir -p wp-content/plugins
