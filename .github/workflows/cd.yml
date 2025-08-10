@@ -19,6 +19,7 @@ jobs:
           PW=$(openssl rand -hex 12)
           echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
           echo "MYSQL_PWD=$PW" >> $GITHUB_ENV # allow mysql client auth without leaking via -p
+          echo "rootpw=$PW" >> $GITHUB_OUTPUT
       - name: Echo generated (masked)
         run: echo "Ephemeral DB root password generated (length ${#DB_ROOT_PW})."
       - name: Secret Scan (Gitleaks)
@@ -59,7 +60,7 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          # omit root password (we connect without -p; ephemeral password exported for client usage only if needed)
+          mysql root password: ${{ steps.gen-db-pw.outputs.rootpw }}
       - name: Wait for DB
         run: |
           echo "Waiting for MySQL (up to ~80s)..."

@@ -75,6 +75,7 @@ jobs:
           PW=$(openssl rand -hex 12)
           echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
           echo "MYSQL_PWD=$PW" >> $GITHUB_ENV
+          echo "rootpw=$PW" >> $GITHUB_OUTPUT
       - name: Secret Scan (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
         with:
@@ -146,7 +147,7 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          # root password omitted; client auth uses MYSQL_PWD env
+          mysql root password: ${{ steps.gen-db-pw.outputs.rootpw }}
 
       - name: Wait for DB
         run: |

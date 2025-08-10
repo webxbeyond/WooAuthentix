@@ -23,6 +23,7 @@ jobs:
           PW=$(openssl rand -hex 12)
           echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
           echo "MYSQL_PWD=$PW" >> $GITHUB_ENV # mysql client will read this; avoid -p warning
+          echo "rootpw=$PW" >> $GITHUB_OUTPUT
       - name: Secret Scan (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
         with:
@@ -45,7 +46,7 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          # Omit root password to allow startup; we'll set one after readiness if needed.
+          mysql root password: ${{ steps.gen-db-pw.outputs.rootpw }}
       - name: Wait for DB
         run: |
           echo "Waiting for MySQL to become available..."
