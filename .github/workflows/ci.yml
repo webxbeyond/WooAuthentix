@@ -22,6 +22,7 @@ jobs:
         run: |
           PW=$(openssl rand -hex 12)
           echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
+          echo "MYSQL_PWD=$PW" >> $GITHUB_ENV # mysql client will read this; avoid -p warning
       - name: Secret Scan (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
         with:
@@ -44,14 +45,19 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          mysql root password: ${{ env.DB_ROOT_PW }}
+          # Omit root password to allow startup; we'll set one after readiness if needed.
       - name: Wait for DB
         run: |
-          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -p${DB_ROOT_PW} -e 'SELECT 1' && break || sleep 2; done
+          echo "Waiting for MySQL to become available..."
+          for i in {1..40}; do
+            mysqladmin --host=127.0.0.1 --user=root ping >/dev/null 2>&1 && break
+            sleep 2
+          done
+          mysql --host=127.0.0.1 --user=root -e 'SELECT 1' || (echo 'MySQL not reachable' >&2; exit 1)
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=${WP_VERSION:-latest}
-          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root ${DB_ROOT_PW} 127.0.0.1 $WP_VERSION
+          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root $DB_ROOT_PW 127.0.0.1 $WP_VERSION
       - name: Install WooCommerce (optional)
         run: |
           mkdir -p wp-content/plugins
