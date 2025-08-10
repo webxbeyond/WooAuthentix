@@ -55,6 +55,12 @@ jobs:
             sleep 2
           done
           mysql --host=127.0.0.1 --user=root -e 'SELECT 1' || (echo 'MySQL not reachable' >&2; exit 1)
+      - name: Install SVN (required by WP test installer)
+        run: |
+          if ! command -v svn >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y subversion
+          fi
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=${WP_VERSION:-latest}
