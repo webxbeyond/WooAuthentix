@@ -72,6 +72,7 @@ jobs:
         run: |
           PW=$(openssl rand -hex 12)
           echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
+          echo "MYSQL_PWD=$PW" >> $GITHUB_ENV
       - name: Secret Scan (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
         with:
@@ -143,16 +144,24 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          mysql root password: ${{ env.DB_ROOT_PW }}
+          # omit password (set via MYSQL_PWD for client only)
 
       - name: Wait for DB
         run: |
-          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -p${DB_ROOT_PW} -e 'SELECT 1' && break || sleep 2; done
+          echo "Waiting for MySQL..."; for i in {1..40}; do mysqladmin --host=127.0.0.1 --user=root ping >/dev/null 2>&1 && break || sleep 2; done; mysql --host=127.0.0.1 --user=root -e 'SELECT 1'
 
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=${WP_VERSION:-latest}
-          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root ${DB_ROOT_PW} 127.0.0.1 $WP_VERSION
+          set -e
+          SCRIPT=/tmp/install-wp-tests.sh
+          for U in \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/master/templates/install-wp-tests.sh \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/3c6a4f6e21b4e6f6b7cb3a3d4ccf6d59f6a01111/templates/install-wp-tests.sh ; do
+            echo "Fetch $U"; if curl -fsSL "$U" -o "$SCRIPT"; then echo "Downloaded"; break; fi; done
+          [ -s "$SCRIPT" ] || { echo 'Failed to fetch install-wp-tests.sh' >&2; exit 1; }
+          bash "$SCRIPT" wordpress_test root "$DB_ROOT_PW" 127.0.0.1 "$WP_VERSION"
 
       - name: (Optional) Install WooCommerce
         run: |

@@ -18,6 +18,7 @@ jobs:
         run: |
           PW=$(openssl rand -hex 12)
           echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
+          echo "MYSQL_PWD=$PW" >> $GITHUB_ENV # allow mysql client auth without leaking via -p
       - name: Echo generated (masked)
         run: echo "Ephemeral DB root password generated (length ${#DB_ROOT_PW})."
       - name: Secret Scan (Gitleaks)
@@ -56,14 +57,30 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          mysql root password: ${{ env.DB_ROOT_PW }}
+          # omit root password (we connect without -p; ephemeral password exported for client usage only if needed)
       - name: Wait for DB
         run: |
-          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -p${DB_ROOT_PW} -e 'SELECT 1' && break || sleep 2; done
+          echo "Waiting for MySQL (up to ~80s)..."
+          for i in {1..40}; do
+            mysqladmin --host=127.0.0.1 --user=root ping >/dev/null 2>&1 && break
+            sleep 2
+          done
+          mysql --host=127.0.0.1 --user=root -e 'SELECT 1' || (echo 'MySQL not reachable' >&2; exit 1)
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=latest
-          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root ${DB_ROOT_PW} 127.0.0.1 $WP_VERSION
+          set -e
+          SCRIPT_PATH=/tmp/install-wp-tests.sh
+          # Try multiple fallbacks for installer reliability
+          for U in \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/master/templates/install-wp-tests.sh \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh \
+            https://raw.githubusercontent.com/wp-cli/scaffold-command/3c6a4f6e21b4e6f6b7cb3a3d4ccf6d59f6a01111/templates/install-wp-tests.sh ; do
+            echo "Attempting download: $U";
+            if curl -fsSL "$U" -o "$SCRIPT_PATH"; then echo "Downloaded from $U"; break; fi
+          done
+          if [ ! -s "$SCRIPT_PATH" ]; then echo 'Failed to download install-wp-tests.sh from all fallbacks' >&2; exit 1; fi
+          bash "$SCRIPT_PATH" wordpress_test root "$DB_ROOT_PW" 127.0.0.1 "$WP_VERSION"
       - name: Install WooCommerce (optional)
         run: |
           mkdir -p wp-content/plugins
