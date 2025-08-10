@@ -13,6 +13,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Generate ephemeral DB root password
+        id: gen-db-pw
+        run: |
+          PW=$(openssl rand -hex 12)
+          echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
+      - name: Echo generated (masked)
+        run: echo "Ephemeral DB root password generated (length ${#DB_ROOT_PW})."
+      - name: Secret Scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --no-git -v
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -45,14 +56,14 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          mysql root password: ''
+          mysql root password: ${{ env.DB_ROOT_PW }}
       - name: Wait for DB
         run: |
-          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -e 'SELECT 1' && break || sleep 2; done
+          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -p${DB_ROOT_PW} -e 'SELECT 1' && break || sleep 2; done
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=latest
-          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root '' 127.0.0.1 $WP_VERSION
+          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root ${DB_ROOT_PW} 127.0.0.1 $WP_VERSION
       - name: Install WooCommerce (optional)
         run: |
           mkdir -p wp-content/plugins

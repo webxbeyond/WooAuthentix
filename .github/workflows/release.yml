@@ -60,12 +60,22 @@ jobs:
     env:
       WP_VERSION: latest
       PHP_VERSION: '8.2'
+      # DB_ROOT_PW will be generated per run
     needs: [auto-tag]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Generate ephemeral DB root password
+        id: gen-db-pw
+        run: |
+          PW=$(openssl rand -hex 12)
+          echo "DB_ROOT_PW=$PW" >> $GITHUB_ENV
+      - name: Secret Scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --no-git -v
 
       - name: (Dispatch) Bump & Tag Version (semantic)
         if: github.event_name == 'workflow_dispatch'
@@ -133,16 +143,16 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          mysql root password: ''
+          mysql root password: ${{ env.DB_ROOT_PW }}
 
       - name: Wait for DB
         run: |
-          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -e 'SELECT 1' && break || sleep 2; done
+          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -p${DB_ROOT_PW} -e 'SELECT 1' && break || sleep 2; done
 
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=${WP_VERSION:-latest}
-          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root '' 127.0.0.1 $WP_VERSION
+          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root ${DB_ROOT_PW} 127.0.0.1 $WP_VERSION
 
       - name: (Optional) Install WooCommerce
         run: |
@@ -235,52 +245,12 @@ jobs:
           asset_name: ${{ steps.build_zip.outputs.zip_name }}
           asset_content_type: application/zip
 
-  deploy-wordpress-org:
-    name: Deploy to WordPress.org SVN
-    runs-on: ubuntu-latest
-    needs: build-and-release
+  # Deployment to WordPress.org now centralized in wp-org-deploy.yml to avoid duplication.
+  # (Optional) dispatch that workflow here if on tag.
+  trigger-wporg-deploy:
     if: startsWith(github.ref, 'refs/tags/v')
-    env:
-      WP_ORG_SLUG: wooauthentix-product-code-verification # Adjust to actual slug
+    needs: build-and-release
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Verify version consistency
-        run: |
-          HEADER_VER=$(grep -E '^Version:' -m1 authentic-checker.php | awk '{print $2}')
-          TAG=${GITHUB_REF_NAME#v}
-          if [ "$HEADER_VER" != "$TAG" ]; then
-            echo "Plugin header version ($HEADER_VER) does not match tag ($TAG)" >&2
-            exit 1
-          fi
-      - name: Deploy to WordPress.org (svn)
-        env:
-          WP_ORG_SLUG: ${{ env.WP_ORG_SLUG }}
-          VERSION_TAG: ${{ github.ref_name }}
-        run: |
-          WP_ORG_USERNAME='${{ secrets.WP_ORG_USERNAME }}'
-          WP_ORG_PASSWORD='${{ secrets.WP_ORG_PASSWORD }}'
-          if [ -z "$WP_ORG_USERNAME" ] || [ -z "$WP_ORG_PASSWORD" ]; then
-            echo "Skipping deploy: WP_ORG_USERNAME or WP_ORG_PASSWORD not set."; exit 0; fi
-          VERSION=${VERSION_TAG#v}
-          SVN_URL="https://plugins.svn.wordpress.org/${WP_ORG_SLUG}"
-          echo "Preparing SVN checkout for $SVN_URL (version $VERSION)";
-          svn checkout "${SVN_URL}" svn-wp || svn co "${SVN_URL}" svn-wp
-          cd svn-wp
-          # Create tag dir if not exists
-          mkdir -p tags/$VERSION
-          rm -rf trunk/*
-          # Copy current repo (excluding .git and workflow dir)
-          rsync -av --delete --exclude '.git' --exclude '.github' ../../ ./trunk/
-          # Copy to tag
-          rsync -av trunk/ tags/$VERSION/
-          svn add --force * > /dev/null 2>&1 || true
-          svn status
-          # Remove deleted files
-          svn status | awk '/^!/ {print $2}' | xargs -r svn del
-          echo "Committing to WordPress.org..."
-          svn commit -m "Release version $VERSION" --username "$WP_ORG_USERNAME" --password "$WP_ORG_PASSWORD" --non-interactive --no-auth-cache || {
-            echo "SVN commit failed" >&2; exit 1; }
-          echo "WordPress.org deploy complete."
+      - name: Trigger wp-org deploy (placeholder)
+        run: echo "Tag build complete; wp-org deploy handled by separate workflow." 
