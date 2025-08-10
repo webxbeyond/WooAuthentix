@@ -37,8 +37,12 @@ jobs:
           extensions: mysqli
       - name: Install dependencies
         run: |
-          composer global require wp-coding-standards/wpcs:"^3.0" dealerdirect/phpcodesniffer-composer-installer:"^1.0"
-          phpcs --config-set installed_paths $(composer global config home)/vendor/wp-coding-standards/wpcs
+          composer global config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer global require wp-coding-standards/wpcs:"^3.0" dealerdirect/phpcodesniffer-composer-installer:"^1.0" || true
+          # Don't overwrite installed_paths with only WPCS; include all auto-installed standards needed by WPCS 3.x
+          PHP_CS_HOME=$(composer global config home)
+          phpcs --config-set installed_paths \
+            "$PHP_CS_HOME/vendor/wp-coding-standards/wpcs,$PHP_CS_HOME/vendor/phpcsstandards/phpcsextra,$PHP_CS_HOME/vendor/phpcsstandards/phpcsutils" || true
       - name: PHPCS
         run: phpcs -q --standard=.phpcs.xml.dist . || true
       - name: Start MySQL service
