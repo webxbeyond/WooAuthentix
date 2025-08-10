@@ -61,6 +61,10 @@ jobs:
             sudo apt-get update -y
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y subversion
           fi
+      - name: Reset test DB (ensure non-interactive installer)
+        run: |
+          # Drop the test database if it exists so install-wp-tests.sh won't prompt for confirmation.
+          mysql --host=127.0.0.1 --user=root -e "DROP DATABASE IF EXISTS wordpress_test;" || true
       - name: Set up WordPress test suite
         run: |
           WP_VERSION=${WP_VERSION:-latest}
