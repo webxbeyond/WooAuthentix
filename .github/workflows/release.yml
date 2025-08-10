@@ -19,6 +19,8 @@ jobs:
   auto-tag:
     name: Auto Tag (branch push)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     steps:
       - name: Checkout
@@ -144,7 +146,7 @@ jobs:
         with:
           mysql version: '8.0'
           mysql database: 'wordpress_test'
-          # omit password (set via MYSQL_PWD for client only)
+          # root password omitted; client auth uses MYSQL_PWD env
 
       - name: Wait for DB
         run: |
