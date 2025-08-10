@@ -1,0 +1,68 @@
+###############################
+# Core Build / Dependencies   #
+###############################
+/vendor/
+/node_modules/
+/dist/
+/.cache/
+
+###############################
+# WordPress Test Scaffolding  #
+###############################
+/wordpress/
+/wordpress-tests-lib/
+/wp/
+/wp-content/
+
+###############################
+# Logs / Coverage / Reports   #
+###############################
+*.log
+/coverage/
+/.phpunit.result.cache
+*.xml.junit
+*.coverage
+
+###############################
+# IDE / Editor / OS           #
+###############################
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+###############################
+# Archives / Packages         #
+###############################
+*.zip
+*.tar.gz
+
+###############################
+# Env / Secrets               #
+###############################
+.env
+.env.*
+/.docker-env
+
+###############################
+# Lock Files (optional)       #
+# (Uncomment retain if you decide to track dependency locks)
+###############################
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+composer.lock
+
+###############################
+# Tooling Config (generated)  #
+###############################
+/.phpcs-cache
+
+###############################
+# Misc                        #
+###############################
+~$*
+*.orig
+

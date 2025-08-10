@@ -1,0 +1,37 @@
+# Normalize line endings
+* text=auto
+
+# Treat these as text for diffs
+*.php text diff=php
+*.css text
+*.js  text
+*.json text
+*.md  text
+*.yml text
+*.xml text
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.pdf binary
+*.mo  binary
+
+# Export-ignore (when creating archives)
+/.github export-ignore
+/tests export-ignore
+/wordpress export-ignore
+/wordpress-tests-lib export-ignore
+/wp-content export-ignore
+/node_modules export-ignore
+/vendor/bin export-ignore
+/.gitignore export-ignore
+/.distignore export-ignore
+/.phpcs.xml.dist export-ignore
+/phpunit.xml.dist export-ignore
+/.idea export-ignore
+/.vscode export-ignore
+/coverage export-ignore

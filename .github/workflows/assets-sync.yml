@@ -1,0 +1,35 @@
+name: WP.org Readme & Assets Sync
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate readme.txt from README.md
+        run: |
+          php tools/generate-wp-readme.php > .wordpress-org/readme.txt
+          echo "Generated readme:" && head -n 20 .wordpress-org/readme.txt
+      - name: Commit updated readme (if changed)
+        run: |
+          if git diff --quiet .wordpress-org/readme.txt; then
+            echo "No readme changes."; exit 0; fi
+          git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+          git add .wordpress-org/readme.txt
+          git commit -m "chore: update wp.org readme from README.md"
+          git push
+      - name: (Optional) Deploy assets only (tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: 10up/action-wordpress-plugin-asset-update@stable
+        env:
+          SVN_USERNAME: ${{ secrets.WP_ORG_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.WP_ORG_PASSWORD }}
+          SLUG: wooauthentix

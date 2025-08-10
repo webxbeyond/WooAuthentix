@@ -1,0 +1,54 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [ main, master ]
+
+env:
+  WP_VERSION: latest
+  PHP_VERSION: '8.2'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.2','8.1','7.4']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer, phpunit, phpcs
+          extensions: mysqli
+      - name: Install dependencies
+        run: |
+          composer global require wp-coding-standards/wpcs:"^3.0" dealerdirect/phpcodesniffer-composer-installer:"^1.0"
+          phpcs --config-set installed_paths $(composer global config home)/vendor/wp-coding-standards/wpcs
+      - name: PHPCS
+        run: phpcs -q --standard=.phpcs.xml.dist . || true
+      - name: Start MySQL service
+        uses: mirromutth/mysql-action@v1.1
+        with:
+          mysql version: '8.0'
+          mysql database: 'wordpress_test'
+          mysql root password: ''
+      - name: Wait for DB
+        run: |
+          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -e 'SELECT 1' && break || sleep 2; done
+      - name: Set up WordPress test suite
+        run: |
+          WP_VERSION=${WP_VERSION:-latest}
+          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root '' 127.0.0.1 $WP_VERSION
+      - name: Install WooCommerce (optional)
+        run: |
+          mkdir -p wp-content/plugins
+          git clone --depth=1 https://github.com/woocommerce/woocommerce.git wp-content/plugins/woocommerce || true
+      - name: PHPUnit
+        env:
+          WP_TESTS_DIR: /home/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/wordpress-tests-lib
+        run: |
+          phpunit --version
+          phpunit --colors=always || (echo "PHPUnit tests failed" && exit 1)

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<ruleset name="WooAuthentix Standards">
+  <description>PHPCS rules for WooAuthentix (WordPress Core + selective exclusions).</description>
+  <file>./</file>
+  <exclude-pattern>vendor/*</exclude-pattern>
+  <exclude-pattern>node_modules/*</exclude-pattern>
+  <rule ref="WordPress-Core" />
+  <rule ref="WordPress-Extra" />
+  <rule ref="WordPress-Docs" />
+  <config name="minimum_supported_wp_version" value="6.0"/>
+  <config name="testVersion" value="7.4-" />
+  <arg name="extensions" value="php"/>
+  <arg name="basepath" value="."/>
+</ruleset>

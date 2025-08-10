@@ -1,0 +1,79 @@
+name: Continuous Deployment (Plugin Zip Artifact)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer, phpunit, phpcs
+          extensions: mysqli
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+      - name: Cache Node
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json','**/yarn.lock','**/pnpm-lock.yaml') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+      - name: Install PHPCS standards
+        run: |
+          composer global require wp-coding-standards/wpcs:"^3.0" dealerdirect/phpcodesniffer-composer-installer:"^1.0" || true
+          phpcs --config-set installed_paths $(composer global config home)/vendor/wp-coding-standards/wpcs || true
+      - name: Start MySQL service
+        uses: mirromutth/mysql-action@v1.1
+        with:
+          mysql version: '8.0'
+          mysql database: 'wordpress_test'
+          mysql root password: ''
+      - name: Wait for DB
+        run: |
+          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -e 'SELECT 1' && break || sleep 2; done
+      - name: Set up WordPress test suite
+        run: |
+          WP_VERSION=latest
+          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/trunk/templates/install-wp-tests.sh) wordpress_test root '' 127.0.0.1 $WP_VERSION
+      - name: Install WooCommerce (optional)
+        run: |
+          mkdir -p wp-content/plugins
+          git clone --depth=1 https://github.com/woocommerce/woocommerce.git wp-content/plugins/woocommerce || true
+      - name: PHPCS
+        run: phpcs -q --standard=.phpcs.xml.dist .
+      - name: PHPUnit
+        env:
+          WP_TESTS_DIR: /home/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/wordpress-tests-lib
+        run: |
+          phpunit --colors=always
+      - name: Build Zip (export-ignore aware)
+        id: build
+        run: |
+          VERSION=$(grep '^Version:' authentic-checker.php | awk '{print $2}')
+          ZIP=wooauthentix-${VERSION}.zip
+          git archive --format=zip --output "$ZIP" HEAD
+          echo "zip_name=$ZIP" >> $GITHUB_OUTPUT
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wooauthentix-latest
+          path: ${{ steps.build.outputs.zip_name }}
+          if-no-files-found: error

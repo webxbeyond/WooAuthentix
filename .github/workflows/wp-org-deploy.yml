@@ -1,0 +1,47 @@
+name: Deploy to WordPress.org
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version/tag to deploy (e.g. v2.2.0)"
+        required: true
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.repository_owner != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get Version
+        id: ver
+        run: |
+          TAG=${GITHUB_REF_NAME:-${{ github.event.inputs.version }}}
+          CLEAN=${TAG#v}
+          echo "version=$CLEAN" >> $GITHUB_OUTPUT
+
+      - name: Prepare Slug
+        id: slug
+        run: |
+          # Set your plugin slug here (folder name in SVN)
+          echo "slug=wooauthentix" >> $GITHUB_OUTPUT
+
+      - name: WordPress.org Deploy
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        env:
+          SVN_USERNAME: ${{ secrets.WP_ORG_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.WP_ORG_PASSWORD }}
+          SLUG: ${{ steps.slug.outputs.slug }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          # Optional: ASSETS_DIR: .wordpress-org
+          # Optional: IGNORE_OTHER_FILES: true
+
+      - name: Output
+        run: echo "Deployment attempt for version ${{ steps.ver.outputs.version }} complete."

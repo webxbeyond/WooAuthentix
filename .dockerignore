@@ -1,0 +1,18 @@
+# Leverage ignore patterns to keep image lean
+.git
+.github
+.gitignore
+.distignore
+.gitattributes
+node_modules
+vendor
+wordpress
+wordpress-tests-lib
+wp-content
+coverage
+*.log
+.idea
+.vscode
+/tests
+/phpunit.xml.dist
+/.phpcs.xml.dist
