@@ -5,7 +5,7 @@ The latest main branch / release tag receives security updates. Older versions m
 
 ## Reporting a Vulnerability
 1. DO NOT open a public issue for sensitive security reports.
-2. Email: security@example.com (replace with a monitored inbox you control).
+2. Email: anis@webxbeyond.com (replace with a monitored inbox you control).
 3. Include:
    - Plugin version
    - WordPress & PHP version

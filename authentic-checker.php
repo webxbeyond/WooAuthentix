@@ -2,7 +2,7 @@
 /*
 Plugin Name: WooAuthentix: Product Code Verification
 Description: Manage, assign, and verify unique authenticity codes for WooCommerce products with privacy, logging, security controls, and a generic code pool.
-Version: 2.2.1
+Version: 2.3.0
 Author: Anis Afifi
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -18,8 +18,8 @@ defined('ABSPATH') || exit;
 if ( ! defined('WC_APC_PLUGIN_FILE') ) { define('WC_APC_PLUGIN_FILE', __FILE__ ); }
 
 // Plugin constants
-const WC_APC_VERSION = '2.2.1'; // keep in sync with header Version & readme.txt Stable tag
-const WC_APC_DB_VERSION = '2.2.1';
+const WC_APC_VERSION = '2.3.0'; // keep in sync with header Version & readme.txt Stable tag
+const WC_APC_DB_VERSION = '2.3.0';
 const WC_APC_TABLE = 'wc_authentic_codes';
 const WC_APC_OPTION_SETTINGS = 'wooauthentix_settings';
 const WC_APC_RATE_LIMIT_MAX = 20; // attempts
@@ -27,6 +27,9 @@ const WC_APC_RATE_LIMIT_WINDOW = 300; // seconds
 const WC_APC_LOG_TABLE = 'wc_authentic_logs';
 const WC_APC_CRON_EVENT = 'wooauthentix_prune_logs';
 const WC_APC_ITEM_META_KEY = '_wc_apc_code';
+// Code length bounds (even hex characters) – update here if requirements change.
+const WC_APC_CODE_MIN_LENGTH = 8;
+const WC_APC_CODE_MAX_LENGTH = 32;
 
 // Declare WooCommerce High-Performance Order Storage compatibility.
 add_action('before_woocommerce_init', function(){
@@ -88,6 +91,10 @@ function wooauthentix_activate(){
         wp_schedule_event(time()+3600, 'daily', WC_APC_CRON_EVENT);
     }
     wooauthentix_run_migrations('install');
+    // Ensure custom rewrites registered by modules (e.g., pretty verification URL) are flushed.
+    if ( function_exists( 'flush_rewrite_rules' ) ) {
+        flush_rewrite_rules();
+    }
 }
 
 // DB migration check (runs on admin_init for performance reasons only when version drift)
@@ -134,38 +141,69 @@ function wooauthentix_run_migrations($context='upgrade'){
     do_action('wooauthentix_after_migrations', $from, WC_APC_DB_VERSION, $context);
 }
 
-function wc_apc_get_settings() {
+function wc_apc_get_settings($refresh = false) {
+    // Lightweight in-request cache to avoid repeat option fetch/normalization.
+    if ( ! $refresh && isset($GLOBALS['wc_apc_settings_cache']) && is_array($GLOBALS['wc_apc_settings_cache']) ) {
+        return $GLOBALS['wc_apc_settings_cache'];
+    }
     $defaults = [
-        'show_buyer_name' => 0,
-        'mask_buyer_name' => 1,
-        'show_purchase_date' => 0,
-    'enable_rate_limit' => 1,
-    'rate_limit_max' => WC_APC_RATE_LIMIT_MAX,
-    'rate_limit_window' => WC_APC_RATE_LIMIT_WINDOW,
-    'enable_logging' => 1,
-    'log_retention_days' => 90,
-    'code_length' => 12,
-    'low_stock_threshold' => 20,
-    'low_stock_notify' => 1,
-    'preprinted_mode' => 0,
-    'verification_page_url' => '',
-    'label_brand_text' => '',
-    'label_logo_id' => 0,
-    'label_qr_size' => 110,
-    'label_columns' => 0,
-    'label_margin' => 6,
-    'label_logo_overlay' => 0,
-    'label_logo_overlay_scale' => 28,
-    'enable_server_side_qr' => 0,
-    'label_enable_border' => 1,
-    'label_border_size' => 1,
-    'label_show_brand' => 1,
-    'label_show_logo' => 1,
-    'label_show_code' => 1,
-    'label_show_site' => 1,
+        'show_buyer_name'         => 0,
+        'mask_buyer_name'         => 1,
+        'show_purchase_date'      => 0,
+        'enable_rate_limit'       => 1,
+        'rate_limit_max'          => WC_APC_RATE_LIMIT_MAX,
+        'rate_limit_window'       => WC_APC_RATE_LIMIT_WINDOW,
+        'enable_logging'          => 1,
+        'log_retention_days'      => 90,
+        'code_length'             => 12,
+        'low_stock_threshold'     => 20,
+        'low_stock_notify'        => 1,
+        'preprinted_mode'         => 0,
+        'verification_page_url'   => '',
+        'label_brand_text'        => '',
+        'label_logo_id'           => 0,
+        'label_qr_size'           => 110,
+        'label_columns'           => 0,
+        'label_margin'            => 6,
+        'label_logo_overlay'      => 0,
+        'label_logo_overlay_scale'=> 28,
+        'enable_server_side_qr'   => 0,
+        'label_enable_border'     => 1,
+        'label_border_size'       => 1,
+        'label_show_brand'        => 1,
+        'label_show_logo'         => 1,
+        'label_show_code'         => 1,
+        'label_show_site'         => 1,
+    // Verification design defaults
+    'verification_heading'              => __('Product Authenticity','wooauthentix'),
+    'verification_msg_first_time'       => __('First-time verification: product authenticated.','wooauthentix'),
+    'verification_msg_already_verified' => __('This authenticity code has already been verified.','wooauthentix'),
+    'verification_msg_unassigned'       => __('Invalid code or not yet assigned to a purchase.','wooauthentix'),
+    'verification_msg_invalid_code'     => __('Invalid code. This product may not be authentic.','wooauthentix'),
+    'verification_msg_invalid_format'   => __('Invalid code format.','wooauthentix'),
+    'verification_msg_rate_limited'     => __('Rate limit exceeded. Please wait and try again.','wooauthentix'),
+    'verification_container_width'      => 500,
+    'verification_bg_color'             => '#f5f5f7',
+    'verification_show_product_image'   => 1,
+    'verification_custom_css'           => '',
+    'verification_custom_js'            => '',
     ];
-    return wp_parse_args(get_option(WC_APC_OPTION_SETTINGS, []), $defaults);
+    $settings = wp_parse_args( get_option( WC_APC_OPTION_SETTINGS, [] ), $defaults );
+    // Normalize length once early; load helper if not yet loaded.
+    if ( ! function_exists( 'wc_apc_normalize_code_length' ) ) {
+        $util = plugin_dir_path( __FILE__ ) . 'includes/module-utils.php';
+        if ( file_exists( $util ) ) { require_once $util; }
+    }
+    if ( function_exists( 'wc_apc_normalize_code_length' ) ) {
+        $settings['code_length'] = wc_apc_normalize_code_length( $settings['code_length'] );
+    }
+    // Store cache
+    $GLOBALS['wc_apc_settings_cache'] = $settings;
+    return $settings;
 }
+
+/** Clear cached settings (e.g., after update_option). */
+function wc_apc_flush_settings_cache(){ unset($GLOBALS['wc_apc_settings_cache']); }
 
 // (Legacy wc_apc_settings_page removed; now in module.)
 

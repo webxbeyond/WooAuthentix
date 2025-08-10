@@ -7,28 +7,93 @@ class WC_APC_Verification_Module {
 		add_shortcode('wc_authentic_checker', [__CLASS__,'shortcode']);
 		add_action('rest_api_init', [__CLASS__,'register_rest']);
 		add_action(WC_APC_CRON_EVENT, [__CLASS__,'prune_logs']);
+		// Pretty permalink: /v/CODE -> verification output
+		add_action('init', [__CLASS__, 'add_rewrite']);
+		add_filter('query_vars', [__CLASS__, 'register_query_vars']);
+		add_action('template_redirect', [__CLASS__, 'handle_pretty_verification']);
+	}
+
+	/** Register rewrite rule for /v/{CODE} */
+	public static function add_rewrite() {
+		// Accept 8-32 hex chars (even length will be validated later)
+		add_rewrite_rule('^v/([A-Fa-f0-9]{8,32})/?$', 'index.php?wc_apc_verify=1&wc_apc_code=$matches[1]', 'top');
+	}
+
+	/** Allow custom query vars */
+	public static function register_query_vars($vars) {
+		$vars[] = 'wc_apc_verify';
+		$vars[] = 'wc_apc_code';
+		return $vars;
+	}
+
+	/** Handle pretty verification URL rendering */
+	public static function handle_pretty_verification() {
+		if ( intval(get_query_var('wc_apc_verify')) !== 1 ) return;
+		$code = get_query_var('wc_apc_code');
+		if ( ! $code ) return; // let normal flow continue
+		$code = strtoupper(sanitize_text_field($code));
+		$settings = wc_apc_get_settings();
+		$len = function_exists('wc_apc_get_code_length') ? wc_apc_get_code_length() : ( isset($settings['code_length']) ? (int)$settings['code_length'] : 12 );
+		// Validate format (length + hex) before verification
+		if ( ! preg_match('/^[A-F0-9]{'.preg_quote((string)$len,'/').'}$/', $code) ) {
+			self::render_minimal_page('<p style="color:red;font-weight:bold;">'.esc_html($settings['verification_msg_invalid_format']).'</p>', $code, $settings);
+			exit;
+		}
+		$result = self::perform_verification($code, 'pretty');
+		self::render_minimal_page($result['html'], $code, $settings);
+		exit;
+	}
+
+	/** Output a minimal standalone HTML page (bypasses theme) with design settings */
+	protected static function render_minimal_page($content_html, $code, $settings=null) {
+		if(!$settings) $settings = wc_apc_get_settings();
+		$site = get_bloginfo('name');
+		$heading = isset($settings['verification_heading'])? $settings['verification_heading']:__('Product Authenticity','wooauthentix');
+		$container_width = isset($settings['verification_container_width'])? intval($settings['verification_container_width']):760;
+		$bg = isset($settings['verification_bg_color'])? $settings['verification_bg_color']:'#f5f5f7';
+		$custom_css = !empty($settings['verification_custom_css'])? '<style id="wooauthentix-custom-css">'.$settings['verification_custom_css'].'</style>':'';
+		$custom_js = !empty($settings['verification_custom_js'])? '<script id="wooauthentix-custom-js">'.$settings['verification_custom_js'].'</script>':'';
+		echo '<!DOCTYPE html><html lang="'.esc_attr(get_locale()).'"><head><meta charset="'.esc_attr(get_bloginfo('charset')).'" />';
+		echo '<title>'.esc_html(sprintf(__('Verification for %s','wooauthentix'), $code)).' - '.esc_html($site).'</title>';
+		echo '<meta name="robots" content="noindex, nofollow" />';
+		echo '<style>body{font:16px/1.4 sans-serif;margin:40px;background:'.esc_attr($bg).';color:#222;} .wa-wrap{max-width:'.esc_attr($container_width).'px;margin:0 auto;background:#fff;padding:28px 32px;border:1px solid #ddd;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.05);} h1{margin-top:0;font-size:24px;} .wa-foot{margin-top:32px;font-size:12px;color:#666;text-align:center;} a{color:#2271b1;text-decoration:none;} a:hover{text-decoration:underline;} .wa-form{margin-top:18px;} input[type=text]{padding:8px;font-size:16px;width:260px;}</style>';
+		echo $custom_css;
+		echo '</head><body><div class="wa-wrap">';
+		echo '<h1>'.esc_html($heading).'</h1>';
+		echo wp_kses_post($content_html);
+		if ( ! empty($settings['verification_page_url']) ) {
+			echo '<p><a href="'.esc_url($settings['verification_page_url']).'">'.esc_html__('Back to verification page','wooauthentix').'</a></p>';
+		}
+		echo '<div class="wa-foot">'.esc_html($site).' &middot; '.esc_html__('Powered by WooAuthentix','wooauthentix').'</div>';
+		echo '</div>'.$custom_js.'</body></html>';
 	}
 
 	public static function shortcode() {
 		ob_start();
 		$settings = wc_apc_get_settings();
-		$len = isset($settings['code_length']) ? (int)$settings['code_length'] : 12; if ($len<8)$len=8; if ($len>32)$len=32; if($len%2!==0)$len++;
+		$len = function_exists('wc_apc_get_code_length') ? wc_apc_get_code_length() : ( isset($settings['code_length']) ? (int)$settings['code_length'] : 12 );
+		$container_width = isset($settings['verification_container_width'])? intval($settings['verification_container_width']):500;
+		$heading = isset($settings['verification_heading'])? $settings['verification_heading']:__('Product Authenticity','wooauthentix');
+		$custom_css = !empty($settings['verification_custom_css'])? '<style id="wooauthentix-custom-css">'.$settings['verification_custom_css'].'</style>':'';
+		$custom_js_footer = !empty($settings['verification_custom_js'])? '<script id="wooauthentix-custom-js">'.$settings['verification_custom_js'].'</script>':'';
 		if (empty($_GET['code'])) {
-			echo '<form method="get" style="margin:1em 0;" aria-describedby="wooauthentix-result" novalidate>';
-			echo '<label style="display:block;margin-bottom:4px;">'.esc_html__('Enter authenticity code','wooauthentix').'</label>';
-			echo '<input type="text" name="code" maxlength="'.esc_attr($len).'" pattern="[A-Fa-f0-9]{'.esc_attr($len).'}" required /> ';
-			echo '<button type="submit">'.esc_html__('Verify','wooauthentix').'</button>';
+			echo '<div class="wooauthentix-verify-wrapper" style="max-width:'.esc_attr($container_width).'px;margin:1.5em auto;padding:24px 28px;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.04);">';
+			echo '<h2 style="margin-top:0;">'.esc_html($heading).'</h2>';
+			echo '<form method="get" class="wooauthentix-verify-form" aria-describedby="wooauthentix-result" novalidate>';
+			echo '<label style="display:block;margin-bottom:6px;font-weight:600;">'.esc_html__('Enter authenticity code','wooauthentix').'</label>';
+			echo '<input style="padding:10px;font-size:16px;width:260px;max-width:100%;" type="text" name="code" maxlength="'.esc_attr($len).'" pattern="[A-Fa-f0-9]{'.esc_attr($len).'}" required /> ';
+			echo '<button type="submit" class="button" style="padding:10px 18px;font-size:15px;">'.esc_html__('Verify','wooauthentix').'</button>';
 			echo '<div id="wooauthentix-result" aria-live="polite" style="margin-top:1em;"></div>';
 			echo '</form>';
+			echo '</div>'.$custom_css.$custom_js_footer;
 			return ob_get_clean();
 		}
 		$code = strtoupper(sanitize_text_field($_GET['code']));
 		if (!preg_match('/^[A-F0-9]{'.preg_quote((string)$len,'/').'}$/', $code)) {
-			echo '<p style="color:red; font-weight:bold;">'.esc_html__('Invalid code format.','wooauthentix').'</p>';
-			return ob_get_clean();
+			echo '<div class="wooauthentix-verify-wrapper" style="max-width:'.esc_attr($container_width).'px;margin:1.5em auto;padding:24px 28px;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.04);"><h2 style="margin-top:0;">'.esc_html($heading).'</h2><p style="color:red; font-weight:bold;">'.esc_html($settings['verification_msg_invalid_format']).'</p></div>'.$custom_css.$custom_js_footer; return ob_get_clean();
 		}
 		$result = self::perform_verification($code, 'shortcode');
-		echo $result['html'];
+		echo '<div class="wooauthentix-verify-wrapper" style="max-width:'.esc_attr($container_width).'px;margin:1.5em auto;padding:24px 28px;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.04);"><h2 style="margin-top:0;">'.esc_html($heading).'</h2>'.$result['html'].'</div>'.$custom_css.$custom_js_footer;
 		return ob_get_clean();
 	}
 
@@ -37,12 +102,12 @@ class WC_APC_Verification_Module {
 		$ip = self::get_ip();
 		if ($settings['enable_rate_limit'] && self::is_rate_limited($ip)) {
 			self::log_attempt($code,'rate_limited');
-			return ['success'=>false,'first_time'=>false,'html'=>'<p style="color:red;font-weight:bold;">'.esc_html__('Rate limit exceeded. Please wait and try again.','wooauthentix').'</p>'];
+			return ['success'=>false,'first_time'=>false,'html'=>'<p style="color:red;font-weight:bold;">'.esc_html(self::replace_placeholders($settings['verification_msg_rate_limited'],$code,null,'','','')).'</p>'];
 		}
 		if ($settings['enable_rate_limit']) self::increment_rate($ip);
 		global $wpdb; $table = $wpdb->prefix . WC_APC_TABLE;
 		$entry = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE code=%s", $code));
-		if(!$entry){ self::log_attempt($code,'invalid_code'); return ['success'=>false,'first_time'=>false,'html'=>'<p style="color:red; font-weight:bold;">'.esc_html__('Invalid code. This product may not be authentic.','wooauthentix').'</p>']; }
+		if(!$entry){ self::log_attempt($code,'invalid_code'); return ['success'=>false,'first_time'=>false,'html'=>'<p style="color:red; font-weight:bold;">'.esc_html(self::replace_placeholders($settings['verification_msg_invalid_code'],$code,null,'','','')).'</p>']; }
 		if (!isset($entry->status) || (int)$entry->status===0) {
 			if (!empty($settings['preprinted_mode'])) {
 				$now=current_time('mysql'); $wpdb->update($table,[ 'status'=>2,'verified_at'=>$now,'is_used'=>1,'used_at'=>$now,'assigned_at'=>$now ], ['id'=>$entry->id]);
@@ -51,7 +116,7 @@ class WC_APC_Verification_Module {
 				do_action('wooauthentix_after_verification',$code,['first_time'=>true,'status'=>2,'product_id'=>$entry->product_id,'order_id'=>null,'verified_at'=>$entry->verified_at,'context'=>$context]);
 			} else {
 				self::log_attempt($code,'unassigned');
-				return ['success'=>false,'first_time'=>false,'html'=>'<p style="color:red; font-weight:bold;">'.esc_html__('Invalid code or not yet assigned to a purchase.','wooauthentix').'</p>'];
+				return ['success'=>false,'first_time'=>false,'html'=>'<p style="color:red; font-weight:bold;">'.esc_html(self::replace_placeholders($settings['verification_msg_unassigned'],$code,null,'','','')).'</p>'];
 			}
 		}
 		$first_time=false;
@@ -61,17 +126,32 @@ class WC_APC_Verification_Module {
 		$product = wc_get_product($entry->product_id); if(!$product){ return ['success'=>false,'first_time'=>false,'html'=>'<p style="color:red; font-weight:bold;">'.esc_html__('Product not found.','wooauthentix').'</p>']; }
 		$buyer_name=''; $purchase_date='';
 		if ($settings['show_buyer_name'] || $settings['show_purchase_date']) { $order = $entry->order_id? wc_get_order($entry->order_id):null; if($order){ if($settings['show_buyer_name']){ $first=$order->get_billing_first_name(); $last=$order->get_billing_last_name(); if($settings['mask_buyer_name'] && $last){ $last=mb_substr($last,0,1).'.'; } $buyer_name=trim($first.' '.$last); if(empty($buyer_name)) $buyer_name=__('Guest','wooauthentix'); } if($settings['show_purchase_date']){ $purchase_date = $order->get_date_created()? $order->get_date_created()->date(get_option('date_format').' '.get_option('time_format')):''; } } }
-		$html = $first_time? '<p style="color:green; font-weight:bold;">'.esc_html__('First-time verification: product authenticated.','wooauthentix').'</p>' : '<p style="color:orange; font-weight:bold;">'.esc_html__('This authenticity code has already been verified.','wooauthentix').'</p>';
+		$msg_first = self::replace_placeholders($settings['verification_msg_first_time'],$code,$product,$buyer_name,$purchase_date,$entry->verified_at);
+		$msg_already = self::replace_placeholders($settings['verification_msg_already_verified'],$code,$product,$buyer_name,$purchase_date,$entry->verified_at);
+		$html = $first_time? '<p style="color:green; font-weight:bold;">'.esc_html($msg_first).'</p>' : '<p style="color:orange; font-weight:bold;">'.esc_html($msg_already).'</p>';
 		$html.='<div style="border:1px solid #ccc; padding:1em; max-width:500px;">';
 		$html.='<h2>'.esc_html__('Product Authenticity Result','wooauthentix').'</h2>';
 		$html.='<p><strong>'.esc_html__('Product','wooauthentix').':</strong> '.esc_html($product->get_name()).'</p>';
-		if ($product->get_image()) { $html.='<p>'.$product->get_image('thumbnail').'</p>'; }
+		if (!empty($settings['verification_show_product_image']) && $product->get_image()) { $html.='<p>'.$product->get_image('thumbnail').'</p>'; }
 		if ($settings['show_buyer_name']) { $html.='<p><strong>'.esc_html__('Buyer Name','wooauthentix').':</strong> '.esc_html($buyer_name).'</p>'; }
 		if ($settings['show_purchase_date']) { $html.='<p><strong>'.esc_html__('Purchase Date','wooauthentix').':</strong> '.esc_html($purchase_date).'</p>'; }
 		$html.='<p><strong>'.esc_html__('Authenticity Code','wooauthentix').':</strong> '.esc_html($code).'</p>';
 		$html.='<p><em>'.esc_html__('First Verified At','wooauthentix').': '.esc_html($entry->verified_at ? $entry->verified_at : __('Not yet','wooauthentix')).'</em></p>';
 		$html.='</div>';
 		return ['success'=>true,'first_time'=>$first_time,'html'=>$html,'product'=>$product,'verified_at'=>$entry->verified_at];
+	}
+
+	/** Replace template placeholders */
+	protected static function replace_placeholders($template,$code,$product,$buyer_name,$purchase_date,$verified_at){
+		$repl = [
+			'{code}' => $code,
+			'{product}' => $product? $product->get_name() : '',
+			'{buyer_name}' => $buyer_name?:'',
+			'{purchase_date}' => $purchase_date?:'',
+			'{verified_at}' => $verified_at?:'',
+			'{site_name}' => get_bloginfo('name'),
+		];
+		return strtr($template, $repl);
 	}
 
 	public static function get_ip() {
@@ -83,7 +163,7 @@ class WC_APC_Verification_Module {
 
 	public static function register_rest() {
 		$settings = wc_apc_get_settings();
-		$len = isset($settings['code_length']) ? (int)$settings['code_length'] : 12; if ($len<8)$len=8; if ($len>32)$len=32; if($len%2!==0)$len++;
+		$len = function_exists('wc_apc_get_code_length') ? wc_apc_get_code_length() : ( isset($settings['code_length']) ? (int)$settings['code_length'] : 12 );
 		register_rest_route('wooauthentix/v1','/verify',[
 			'methods'=>'POST',
 			'permission_callback'=>function($request){

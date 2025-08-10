@@ -4,7 +4,7 @@ Tags: woocommerce, authenticity, security, qr code, verification
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 2.2.1
+Stable tag: 2.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -46,6 +46,10 @@ POST /wp-json/wooauthentix/v1/verify with {"code":"HEXCODE"}.
 3. QR label sheet
 
 == Changelog ==
+= 2.3.0 =
+* Removed legacy order item meta migration code (cleanup after 2.2.x).
+* Internal: version bump & housekeeping.
+
 = 2.2.1 =
 * Performance: Added index on qr_label_generated.
 * Accessibility: Added aria-live region to verification form.

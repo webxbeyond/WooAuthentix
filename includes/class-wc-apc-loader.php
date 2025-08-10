@@ -17,6 +17,9 @@ class WC_APC_Loader {
         if ( file_exists( $root . '/includes/module-constants.php' ) ) {
             require_once $root . '/includes/module-constants.php';
         }
+        if ( file_exists( $root . '/includes/module-utils.php' ) ) {
+            require_once $root . '/includes/module-utils.php';
+        }
     require_once $root . '/includes/module-activation.php';
     require_once $root . '/includes/module-settings.php';
     require_once $root . '/includes/module-codes.php'; // code generation & order assignment

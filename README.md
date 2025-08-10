@@ -102,7 +102,7 @@ Contributions are welcome! Please:
 
 ### Development (Suggested Workflow)
 ```
-git clone <repo-url>
+git clone https://github.com/webxbeyond/WooAuthentix.git
 cd wooauthentix
 # (Optional) Run PHPCS if configured
 ```

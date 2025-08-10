@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and adheres to Semantic Versioning where practical.
 
+# [2.3.0] - 2025-08-10
+### Removed
+- Legacy order item meta key `_authentic_code` migration routine (was executed in <=2.2.x; safe to drop).
+
+### Changed
+- Version bump; cleanup of deprecated compatibility layer code.
+
 # [2.2.1] - 2025-08-10
 ### Added
 - Index on qr_label_generated for faster label filtering.

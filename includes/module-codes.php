@@ -19,8 +19,7 @@ class WC_APC_Codes_Module {
 		$desired = max(1, intval($count));
 		$now = current_time('mysql');
 		$settings = wc_apc_get_settings();
-		$code_length = isset($settings['code_length']) ? intval($settings['code_length']) : 12;
-		if ($code_length < 8) $code_length = 8; if ($code_length > 32) $code_length = 32; if ($code_length % 2 !== 0) $code_length++;
+		$code_length = function_exists('wc_apc_get_code_length') ? wc_apc_get_code_length() : ( isset($settings['code_length']) ? (int)$settings['code_length'] : 12 );
 		$target_pid = intval($product_id) > 0 ? intval($product_id) : null;
 		while (count($codes) < $desired) {
 			$remaining = $desired - count($codes);
@@ -88,14 +87,11 @@ class WC_APC_Codes_Module {
 				}
 			}
 			if(!empty($assigned_codes)){
-				$existing_legacy = $item->get_meta('_authentic_code');
 				$existing_new = $item->get_meta(WC_APC_ITEM_META_KEY);
-				$merged=[];
-				if ($existing_legacy) { $merged = array_merge($merged, array_map('trim', explode(',', $existing_legacy))); }
+				$merged = [];
 				if ($existing_new) { $merged = array_merge($merged, array_map('trim', explode(',', $existing_new))); }
 				$merged = array_unique(array_merge($merged, $assigned_codes));
 				$item->update_meta_data(WC_APC_ITEM_META_KEY, implode(', ', $merged));
-				$item->update_meta_data('_authentic_code', implode(', ', $merged));
 				$item->save();
 			}
 			self::maybe_notify_low_stock($product_id);
